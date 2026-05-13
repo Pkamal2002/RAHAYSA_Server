@@ -36,7 +36,8 @@ export const updateUser = async (req, res, next) => {
     
     // Only Super Admin can change roles
     if (role) {
-      if (req.user.role !== 'Super Admin') {
+      const requesterRole = req.user.role?.trim();
+      if (requesterRole !== 'Super Admin') {
         return res.status(403).json({ message: 'Only Super Admin can change user roles' });
       }
       user.role = role;
@@ -46,15 +47,26 @@ export const updateUser = async (req, res, next) => {
 
     await user.save();
 
+    const changeDetails = [];
+    if (status) changeDetails.push(`status: ${status}`);
+    if (role) changeDetails.push(`role: ${role}`);
+    if (department) changeDetails.push(`department: ${department}`);
+
     await AuditLog.create({
       action: 'USER_UPDATED_BY_ADMIN',
       user: req.user.id,
       target: `User: ${user.name}`,
-      details: `Updated user ${user.email} to status: ${status}, role: ${role}`,
+      details: `Updated ${user.email} -> ${changeDetails.join(', ')}`,
       ip: req.ip
     });
 
-    getIO().emit('user_status_update', { userId: user._id, status: user.status });
+    if (status) {
+      getIO().emit('user_status_update', { userId: user._id, status: user.status });
+    }
+    
+    if (role) {
+      getIO().emit('user_role_update', { userId: user._id, role: user.role });
+    }
 
     // Create notification for the user
     const notification = await Notification.create({
