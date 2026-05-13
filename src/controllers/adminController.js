@@ -24,53 +24,62 @@ export const getUsers = async (req, res, next) => {
 // @access  Private/Admin
 export const updateUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id);
+    const { id } = req.params;
+    const { status, role, department } = req.body;
 
-    if (!user) {
+    // Check if user exists
+    const targetUser = await User.findById(id);
+    if (!targetUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const { status, role, department } = req.body;
+    const updates = {};
+    const changeDetails = [];
 
-    if (status) user.status = status;
-    
-    // Only Super Admin can change roles
+    if (status) {
+      updates.status = status;
+      changeDetails.push(`status: ${status}`);
+    }
+
     if (role) {
       const requesterRole = req.user.role?.trim();
       if (requesterRole !== 'Super Admin') {
         return res.status(403).json({ message: 'Only Super Admin can change user roles' });
       }
-      user.role = role;
+      updates.role = role;
+      changeDetails.push(`role: ${role}`);
     }
 
-    if (department) user.department = department;
+    if (department) {
+      updates.department = department;
+      changeDetails.push(`department: ${department}`);
+    }
 
-    await user.save();
-
-    const changeDetails = [];
-    if (status) changeDetails.push(`status: ${status}`);
-    if (role) changeDetails.push(`role: ${role}`);
-    if (department) changeDetails.push(`department: ${department}`);
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
 
     await AuditLog.create({
       action: 'USER_UPDATED_BY_ADMIN',
       user: req.user.id,
-      target: `User: ${user.name}`,
-      details: `Updated ${user.email} -> ${changeDetails.join(', ')}`,
+      target: `User: ${updatedUser.name}`,
+      details: `Updated ${updatedUser.email} -> ${changeDetails.join(', ')}`,
       ip: req.ip
     });
 
     if (status) {
-      getIO().emit('user_status_update', { userId: user._id, status: user.status });
+      getIO().emit('user_status_update', { userId: updatedUser._id, status: updatedUser.status });
     }
     
     if (role) {
-      getIO().emit('user_role_update', { userId: user._id, role: user.role });
+      getIO().emit('user_role_update', { userId: updatedUser._id, role: updatedUser.role });
     }
 
-    // Create notification for the user
+    // Create notification
     const notification = await Notification.create({
-      recipient: user._id,
+      recipient: updatedUser._id,
       title: status === 'ACTIVE' ? 'Account Approved' : 'Account Update',
       message: status === 'ACTIVE' 
         ? 'Your access to RAHASYA has been approved.' 
@@ -78,12 +87,11 @@ export const updateUser = async (req, res, next) => {
       type: status === 'ACTIVE' ? 'success' : 'info'
     });
 
-    // Emit socket notification
-    getIO().to(user._id.toString()).emit('new_notification', notification);
+    getIO().to(updatedUser._id.toString()).emit('new_notification', notification);
 
     res.json({
       success: true,
-      data: user
+      data: updatedUser
     });
   } catch (error) {
     next(error);
