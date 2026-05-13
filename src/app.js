@@ -13,9 +13,31 @@ const app = express();
 
 // Middlewares
 app.use(helmet());
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  'https://rahasya-client.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+].filter(origin => origin);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if the origin is allowed, removing any trailing slashes for comparison
+    const sanitizedOrigin = origin.replace(/\/$/, "");
+    const isAllowed = allowedOrigins.some(ao => ao.replace(/\/$/, "") === sanitizedOrigin);
+    
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(morgan('dev'));
 app.use(express.json());

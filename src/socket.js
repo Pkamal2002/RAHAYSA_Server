@@ -3,9 +3,25 @@ import { Server } from 'socket.io';
 let io;
 
 export const initSocket = (server) => {
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'https://rahasya-client.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ].filter(origin => origin);
+
   io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:5173',
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const sanitizedOrigin = origin.replace(/\/$/, "");
+        const isAllowed = allowedOrigins.some(ao => ao.replace(/\/$/, "") === sanitizedOrigin);
+        if (isAllowed) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: ['GET', 'POST'],
       credentials: true
     }
