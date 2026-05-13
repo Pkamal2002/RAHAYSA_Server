@@ -27,12 +27,9 @@ export const updateUser = async (req, res, next) => {
     const { id } = req.params;
     const { status, role, department } = req.body;
     
-    console.log(`[DEBUG] Update Request for ${id}:`, { status, role, department });
-
     // Check if user exists
     const targetUser = await User.findById(id);
     if (!targetUser) {
-      console.log(`[DEBUG] User ${id} not found`);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -45,13 +42,11 @@ export const updateUser = async (req, res, next) => {
     }
 
     if (role) {
-      // Robust Case-Insensitive Role Check
       const requesterRole = req.user.role?.trim().toLowerCase();
-      console.log(`[DEBUG] Requester Role: ${req.user.role}`);
       
       if (requesterRole !== 'super admin') {
         return res.status(403).json({ 
-          message: `Authorization Failed: Your role '${req.user.role}' cannot change user roles.` 
+          message: `Authorization Failed: Only Super Admins can change user roles.` 
         });
       }
       updates.role = role;
@@ -70,9 +65,7 @@ export const updateUser = async (req, res, next) => {
       { new: true, runValidators: false }
     );
 
-    console.log(`[DEBUG] User ${id} updated successfully in DB`);
-
-    // Side Effects (Wrapped in try-catch to avoid blocking the response)
+    // Side Effects
     try {
       await AuditLog.create({
         action: 'USER_UPDATED_BY_ADMIN',
@@ -101,8 +94,7 @@ export const updateUser = async (req, res, next) => {
 
       getIO().to(updatedUser._id.toString()).emit('new_notification', notification);
     } catch (sideEffectError) {
-      console.error('[DEBUG] Side-effect error (Log/Socket/Notification):', sideEffectError.message);
-      // We don't return here because the main DB update worked
+      console.error('Side-effect error:', sideEffectError.message);
     }
 
     res.json({
@@ -110,7 +102,65 @@ export const updateUser = async (req, res, next) => {
       data: updatedUser
     });
   } catch (error) {
-    console.error('[DEBUG] UpdateUser Main Error:', error.message);
+    next(error);
+  }
+};
+
+export const deleteUser = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const requesterRole = req.user.role?.trim().toLowerCase();
+
+    if (requesterRole !== 'super admin') {
+      return res.status(403).json({ message: 'Only Super Admins can delete users' });
+    }
+
+    const userToDelete = await User.findById(id);
+    if (!userToDelete) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    await User.findByIdAndDelete(id);
+
+    await AuditLog.create({
+      action: 'USER_DELETED_BY_ADMIN',
+      user: req.user.id,
+      target: `User: ${userToDelete.name}`,
+      details: `Deleted user ${userToDelete.email}`,
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const clearAuditLogs = async (req, res, next) => {
+  try {
+    const requesterRole = req.user.role?.trim().toLowerCase();
+    if (requesterRole !== 'super admin') {
+      return res.status(403).json({ message: 'Only Super Admins can clear logs' });
+    }
+
+    await AuditLog.deleteMany({});
+
+    await AuditLog.create({
+      action: 'AUDIT_LOGS_CLEARED',
+      user: req.user.id,
+      target: 'System Logs',
+      details: 'All audit logs were cleared by Super Admin',
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      message: 'Audit logs cleared successfully'
+    });
+  } catch (error) {
     next(error);
   }
 };

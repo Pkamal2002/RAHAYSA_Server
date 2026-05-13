@@ -39,16 +39,11 @@ export const authorize = (...roles) => {
     const userRole = req.user.role?.trim().toLowerCase();
     const authorizedRoles = roles.map(r => r.trim().toLowerCase());
 
-    console.log(`[AUTH DEBUG] User Role: "${req.user.role}"`);
-    console.log(`[AUTH DEBUG] Required Roles: ${JSON.stringify(roles)}`);
-
     if (!authorizedRoles.includes(userRole)) {
-      console.log(`[AUTH DEBUG] Access Denied for role: ${req.user.role}`);
       return res.status(403).json({ 
         message: `User role ${req.user.role} is not authorized to access this route` 
       });
     }
-    console.log(`[AUTH DEBUG] Access Granted`);
     next();
   };
 };
