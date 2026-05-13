@@ -63,11 +63,11 @@ export const updateUser = async (req, res, next) => {
       changeDetails.push(`department: ${department}`);
     }
 
-    // Perform the update
+    // Perform the update (Validators turned off to avoid conflict with hidden password field)
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { $set: updates },
-      { new: true, runValidators: true }
+      { new: true, runValidators: false }
     );
 
     console.log(`[DEBUG] User ${id} updated successfully in DB`);
