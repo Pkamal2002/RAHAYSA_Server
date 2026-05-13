@@ -42,9 +42,12 @@ export const updateUser = async (req, res, next) => {
     }
 
     if (role) {
-      const requesterRole = req.user.role?.trim();
-      if (requesterRole !== 'Super Admin') {
-        return res.status(403).json({ message: 'Only Super Admin can change user roles' });
+      // Robust Case-Insensitive Role Check
+      const requesterRole = req.user.role?.trim().toLowerCase();
+      if (requesterRole !== 'super admin') {
+        return res.status(403).json({ 
+          message: `Authorization Failed: Role '${req.user.role}' is not permitted to change user roles.` 
+        });
       }
       updates.role = role;
       changeDetails.push(`role: ${role}`);
