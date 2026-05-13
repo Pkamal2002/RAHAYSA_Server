@@ -48,6 +48,7 @@ app.use(cookieParser());
 app.use('/api/auth', authRoutes);
 app.use('/api/passwords', passwordRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/management', adminRoutes); // Masked alias to bypass AdBlockers
 app.use('/api/notifications', notificationRoutes);
 
 // Basic Route
