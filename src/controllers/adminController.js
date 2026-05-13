@@ -26,10 +26,13 @@ export const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status, role, department } = req.body;
+    
+    console.log(`[DEBUG] Update Request for ${id}:`, { status, role, department });
 
     // Check if user exists
     const targetUser = await User.findById(id);
     if (!targetUser) {
+      console.log(`[DEBUG] User ${id} not found`);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -44,9 +47,11 @@ export const updateUser = async (req, res, next) => {
     if (role) {
       // Robust Case-Insensitive Role Check
       const requesterRole = req.user.role?.trim().toLowerCase();
+      console.log(`[DEBUG] Requester Role: ${req.user.role}`);
+      
       if (requesterRole !== 'super admin') {
         return res.status(403).json({ 
-          message: `Authorization Failed: Role '${req.user.role}' is not permitted to change user roles.` 
+          message: `Authorization Failed: Your role '${req.user.role}' cannot change user roles.` 
         });
       }
       updates.role = role;
@@ -58,45 +63,54 @@ export const updateUser = async (req, res, next) => {
       changeDetails.push(`department: ${department}`);
     }
 
+    // Perform the update
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { $set: updates },
       { new: true, runValidators: true }
     );
 
-    await AuditLog.create({
-      action: 'USER_UPDATED_BY_ADMIN',
-      user: req.user.id,
-      target: `User: ${updatedUser.name}`,
-      details: `Updated ${updatedUser.email} -> ${changeDetails.join(', ')}`,
-      ip: req.ip
-    });
+    console.log(`[DEBUG] User ${id} updated successfully in DB`);
 
-    if (status) {
-      getIO().emit('user_status_update', { userId: updatedUser._id, status: updatedUser.status });
+    // Side Effects (Wrapped in try-catch to avoid blocking the response)
+    try {
+      await AuditLog.create({
+        action: 'USER_UPDATED_BY_ADMIN',
+        user: req.user.id,
+        target: `User: ${updatedUser.name}`,
+        details: `Updated ${updatedUser.email} -> ${changeDetails.join(', ')}`,
+        ip: req.ip
+      });
+
+      if (status) {
+        getIO().emit('user_status_update', { userId: updatedUser._id, status: updatedUser.status });
+      }
+      
+      if (role) {
+        getIO().emit('user_role_update', { userId: updatedUser._id, role: updatedUser.role });
+      }
+
+      const notification = await Notification.create({
+        recipient: updatedUser._id,
+        title: status === 'ACTIVE' ? 'Account Approved' : 'Account Update',
+        message: status === 'ACTIVE' 
+          ? 'Your access to RAHASYA has been approved.' 
+          : `Your account details have been updated by ${req.user.role}.`,
+        type: status === 'ACTIVE' ? 'success' : 'info'
+      });
+
+      getIO().to(updatedUser._id.toString()).emit('new_notification', notification);
+    } catch (sideEffectError) {
+      console.error('[DEBUG] Side-effect error (Log/Socket/Notification):', sideEffectError.message);
+      // We don't return here because the main DB update worked
     }
-    
-    if (role) {
-      getIO().emit('user_role_update', { userId: updatedUser._id, role: updatedUser.role });
-    }
-
-    // Create notification
-    const notification = await Notification.create({
-      recipient: updatedUser._id,
-      title: status === 'ACTIVE' ? 'Account Approved' : 'Account Update',
-      message: status === 'ACTIVE' 
-        ? 'Your access to RAHASYA has been approved.' 
-        : `Your account details have been updated by ${req.user.role}.`,
-      type: status === 'ACTIVE' ? 'success' : 'info'
-    });
-
-    getIO().to(updatedUser._id.toString()).emit('new_notification', notification);
 
     res.json({
       success: true,
       data: updatedUser
     });
   } catch (error) {
+    console.error('[DEBUG] UpdateUser Main Error:', error.message);
     next(error);
   }
 };
